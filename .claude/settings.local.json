@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git push)",
+      "Bash(git push:*)",
+      "Bash(cat:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nFix security vulnerability: Remove hardcoded Stripe API key\n\n- Replace hardcoded secrets with environment variables\n- Update .env.example with STRIPE_API_KEY\n- Add .gitignore to prevent committing .env files\n\nThis fixes the GitHub push protection violation by removing the hardcoded\nStripe API key and using environment variables instead.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git rebase:*)",
+      "Bash(git reset:*)",
+      "Bash(git filter-repo:*)",
+      "Bash(git checkout:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
