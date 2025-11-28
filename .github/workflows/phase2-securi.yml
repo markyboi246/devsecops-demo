@@ -1,0 +1,125 @@
+name: "Phase 2: Security Testing"
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  docker-build-and-scan:
+    name: Build and Scan Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: devsecops-demo:${{ github.sha }}
+          load: true
+
+      - name: Run Trivy container scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: devsecops-demo:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-container-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy container scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-container-results.sarif'
+
+      - name: Upload Trivy scan artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-container-scan-results
+          path: trivy-container-results.sarif
+
+  zap-baseline:
+    name: OWASP ZAP Baseline Scan
+    runs-on: ubuntu-latest
+    needs: docker-build-and-scan
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build application
+        run: |
+          docker build -t devsecops-demo:test .
+
+      - name: Start application container
+        run: |
+          docker run -d --name app -p 3001:3001 devsecops-demo:test
+          sleep 10  # Wait for app to start
+
+      - name: Verify application is running
+        run: |
+          curl -f http://localhost:3001/health || exit 1
+
+      - name: Run ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: 'http://localhost:3001'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'
+
+      - name: Stop application container
+        if: always()
+        run: docker stop app && docker rm app
+
+  zap-full-scan:
+    name: OWASP ZAP Full Scan
+    runs-on: ubuntu-latest
+    needs: docker-build-and-scan
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build and start application
+        run: |
+          docker build -t devsecops-demo:test .
+          docker run -d --name app -p 3001:3001 devsecops-demo:test
+          sleep 10
+
+      - name: Run ZAP Full Scan
+        uses: zaproxy/action-full-scan@v0.10.0
+        with:
+          target: 'http://localhost:3001'
+          allow_issue_writing: false
+
+      - name: Stop application
+        if: always()
+        run: docker stop app && docker rm app
+
+      - name: Upload ZAP scan results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-full-scan-report
+          path: report_html.html
